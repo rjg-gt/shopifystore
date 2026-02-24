@@ -5012,47 +5012,19 @@ main,
   }
 }
 
-/* Base */
-.product__info-wrapper.dynamic-contrast,
+/* Dynamic contrast text treatment */
 .product-details.dynamic-contrast {
-  color: #111;
-  text-shadow: none;
+  isolation: isolate;
 }
 
-/* When background under it is dark -> use light text */
-.product__info-wrapper.dynamic-contrast.is-dark,
-.product-details.dynamic-contrast.is-dark {
+.product-details.dynamic-contrast :where(h1, h2, h3, h4, h5, h6, p, a, span, li, dt, dd, legend, label, small, strong, em, blockquote, cite, .rte, .rte *) {
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+  mix-blend-mode: difference;
 }
 
-/* When background under it is light -> use dark text */
-.product__info-wrapper.dynamic-contrast.is-light,
-.product-details.dynamic-contrast.is-light {
-  color: #111;
-  text-shadow: 0 1px 1px rgba(255,255,255,.25);
-}
-
-/* Apply to common text children (keep it tight: don’t touch form controls) */
-.product__info-wrapper.dynamic-contrast.is-dark :is(h1,h2,h3,h4,h5,h6,p,span,li,small,strong,em,label,.rte,.rte *),
-.product-details.dynamic-contrast.is-dark :is(h1,h2,h3,h4,h5,h6,p,span,li,small,strong,em,label,.rte,.rte *) {
-  color: #fff;
-}
-
-.product__info-wrapper.dynamic-contrast.is-light :is(h1,h2,h3,h4,h5,h6,p,span,li,small,strong,em,label,.rte,.rte *),
-.product-details.dynamic-contrast.is-light :is(h1,h2,h3,h4,h5,h6,p,span,li,small,strong,em,label,.rte,.rte *) {
-  color: #111;
-}
-
-/* Explicitly exclude buttons/inputs/variant pickers etc */
-.product__info-wrapper.dynamic-contrast :is(
-  button, .button, .btn, input, select, textarea,
-  .product-form, .product-form__buttons, .quantity, .variant-picker, .shopify-payment-button
-),
-.product-details.dynamic-contrast :is(
-  button, .button, .btn, input, select, textarea,
-  .product-form, .product-form__buttons, .quantity, .variant-picker, .shopify-payment-button
-) {
-  color: unset;
-  text-shadow: unset;
+/* Keep interactive controls visually unchanged */
+.product-details.dynamic-contrast :where(button, .button, .btn, [role='button'], input, select, textarea, .product-form, .product-form__buttons, .quantity, .variant-picker, .shopify-payment-button),
+.product-details.dynamic-contrast :where(button, .button, .btn, [role='button'], .product-form, .product-form__buttons, .quantity, .variant-picker, .shopify-payment-button) * {
+  color: inherit;
+  mix-blend-mode: normal;
 }
