@@ -132,6 +132,8 @@
     {% if settings.quick_add or settings.mobile_quick_add %}
       {% render 'quick-add-modal' %}
     {% endif %}
-    {{ 'dynamic-contrast.js' | asset_url | script_tag }}
+    {% if template.name == 'product' or template contains 'product' or request.page_type == 'product' %}
+      <script src="{{ 'dynamic-contrast.js' | asset_url }}" defer></script>
+    {% endif %}
   </body>
 </html>
