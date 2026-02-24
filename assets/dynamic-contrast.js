@@ -13,7 +13,6 @@
 
   const TEXT_SELECTOR =
     'h1,h2,h3,h4,h5,h6,p,span,li,dt,dd,small,strong,em,blockquote,a,label,legend';
-  const WRAPPER_SELECTORS = '.dynamic-contrast, .product__info-wrapper, .product-details';
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -151,39 +150,28 @@
     }
   }
 
-
-  function getContrastWrappers() {
-    const wrappers = Array.from(document.querySelectorAll(WRAPPER_SELECTORS)).filter((el) => el instanceof HTMLElement);
-
-    wrappers.forEach((wrapper) => {
-      if (!wrapper.classList.contains('dynamic-contrast')) {
-        wrapper.classList.add('dynamic-contrast');
-      }
-    });
-
-    return wrappers;
-  }
-
   function setWrapperContrast(wrapper, luminance) {
     const contrast = luminance > LUMINANCE_THRESHOLD ? 'dark' : 'light';
     if (wrapper.getAttribute('data-contrast') !== contrast) {
       wrapper.setAttribute('data-contrast', contrast);
     }
+
+    wrapper.querySelectorAll(TEXT_SELECTOR).forEach((node) => {
+      if (node.closest('button, .button, [role="button"], input, select, textarea, .shopify-payment-button, .buy-buttons')) {
+        return;
+      }
+      node.style.color = '';
+    });
   }
 
   function applyContrast() {
     if (!isProductPage()) return;
 
-    getContrastWrappers().forEach((wrapper) => {
+    document.querySelectorAll('.dynamic-contrast').forEach((wrapper) => {
       const wrapperRect = wrapper.getBoundingClientRect();
       if (wrapperRect.width < 4 || wrapperRect.height < 4) return;
 
       const image = findBackgroundImageEl(wrapper);
-      if (image && !image.complete) {
-        image.addEventListener('load', applyContrast, { once: true });
-        return;
-      }
-
       const luminance = image ? computeAverageLuminance(image, wrapperRect) : null;
       const resolvedLuminance = luminance ?? fallbackLuminance(wrapper);
 
@@ -247,7 +235,7 @@
       threshold: [0, 0.2, 0.5, 0.8, 1],
     });
 
-    getContrastWrappers().forEach((wrapper) => intersectionObserver.observe(wrapper));
+    document.querySelectorAll('.dynamic-contrast').forEach((wrapper) => intersectionObserver.observe(wrapper));
 
     bindGalleryObservers(schedule);
   }
