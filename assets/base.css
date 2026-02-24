@@ -5013,9 +5013,13 @@ main,
 }
 
 /* Dynamic contrast text treatment */
+.product-details.dynamic-contrast {
+  isolation: isolate;
+}
+
 .product-details.dynamic-contrast :where(h1, h2, h3, h4, h5, h6, p, a, span, li, dt, dd, legend, label, small, strong, em, blockquote, cite, .rte, .rte *) {
-  color: #fff !important;
-  mix-blend-mode: difference !important;
+  color: #fff;
+  mix-blend-mode: difference;
 }
 
 /* Keep interactive controls visually unchanged */
