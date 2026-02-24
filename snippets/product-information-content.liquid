@@ -117,6 +117,15 @@
     gap: var(--gap) 0;
   }
 
+  .product-information .product-details :is(h1, h2, h3, h4, h5, h6, p, a, span, li, dt, dd, legend, label, small, strong, em, blockquote, cite):not(
+      button *,
+      .button *,
+      .shopify-payment-button *
+    ) {
+    color: #fff;
+    mix-blend-mode: difference;
+  }
+
   /* Base grid layout */
   .product-information__grid {
     display: grid;
