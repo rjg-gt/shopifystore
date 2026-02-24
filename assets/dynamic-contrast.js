@@ -172,11 +172,6 @@
       if (wrapperRect.width < 4 || wrapperRect.height < 4) return;
 
       const image = findBackgroundImageEl(wrapper);
-      if (image && !image.complete) {
-        image.addEventListener('load', applyContrast, { once: true });
-        return;
-      }
-
       const luminance = image ? computeAverageLuminance(image, wrapperRect) : null;
       const resolvedLuminance = luminance ?? fallbackLuminance(wrapper);
 
