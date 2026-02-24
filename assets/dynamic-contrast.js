@@ -3,12 +3,7 @@
   const SAMPLE_GRID_SIZE = 10;
   const SCROLL_RESIZE_THROTTLE_MS = 120;
 
-  const WRAPPER_SELECTORS = '.dynamic-contrast, .product__info-wrapper, .product-details';
-
   const MEDIA_IMAGE_SELECTORS = [
-    '.group-block__media-wrapper .background-image-container img',
-    '.custom-section-background .background-image-container img',
-    '.background-image-container img',
     '.product-information__media img',
     '.product-media-gallery img',
     '.media-gallery img',
@@ -16,8 +11,10 @@
     '.product img',
   ];
 
+  const TEXT_SELECTOR =
+    'h1,h2,h3,h4,h5,h6,p,span,li,dt,dd,small,strong,em,blockquote,a,label,legend';
+
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-  const imageCache = new Map();
 
   function isProductPage() {
     if (document.body?.classList.contains('template-product')) return true;
@@ -46,19 +43,16 @@
     const overlapY = Math.max(0, Math.min(rect.bottom, wrapperRect.bottom) - Math.max(rect.top, wrapperRect.top));
     const overlapArea = overlapX * overlapY;
 
-    if (overlapArea > 0) {
-      const backgroundBonus = img.closest('.group-block__media-wrapper, .custom-section-background, .background-image-container')
-        ? 300000
-        : 0;
-      return overlapArea + 100000 + backgroundBonus;
-    }
+    if (overlapArea > 0) return overlapArea + 100000;
 
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     const wrapperCenterX = wrapperRect.left + wrapperRect.width / 2;
     const wrapperCenterY = wrapperRect.top + wrapperRect.height / 2;
+    const dx = centerX - wrapperCenterX;
+    const dy = centerY - wrapperCenterY;
 
-    return Math.max(0, 50000 - Math.hypot(centerX - wrapperCenterX, centerY - wrapperCenterY));
+    return Math.max(0, 50000 - Math.hypot(dx, dy));
   }
 
   function findBackgroundImageEl(wrapper) {
@@ -93,108 +87,6 @@
       g: clamp(Number.parseFloat(g), 0, 255),
       b: clamp(Number.parseFloat(b), 0, 255),
     };
-  }
-
-  function extractUrl(backgroundImageValue) {
-    const match = backgroundImageValue?.match(/url\((['"]?)(.*?)\1\)/i);
-    return match && match[2] ? match[2] : null;
-  }
-
-  function loadImage(url) {
-    if (!url) return Promise.resolve(null);
-    if (imageCache.has(url)) return imageCache.get(url);
-
-    const promise = new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
-
-    imageCache.set(url, promise);
-    return promise;
-  }
-
-  function computeLuminanceFromCoverImage(img, sampleRect, containerRect, positionX = 0.5, positionY = 0.5) {
-    if (!img || !img.naturalWidth || !img.naturalHeight || !containerRect.width || !containerRect.height) return null;
-
-    const scale = Math.max(containerRect.width / img.naturalWidth, containerRect.height / img.naturalHeight);
-    const renderWidth = img.naturalWidth * scale;
-    const renderHeight = img.naturalHeight * scale;
-    const overflowX = Math.max(0, renderWidth - containerRect.width);
-    const overflowY = Math.max(0, renderHeight - containerRect.height);
-
-    const offsetX = overflowX * positionX;
-    const offsetY = overflowY * positionY;
-
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return null;
-
-      ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
-
-      let total = 0;
-      let count = 0;
-
-      for (let y = 0; y < SAMPLE_GRID_SIZE; y += 1) {
-        for (let x = 0; x < SAMPLE_GRID_SIZE; x += 1) {
-          const vx = sampleRect.left + ((x + 0.5) / SAMPLE_GRID_SIZE) * sampleRect.width;
-          const vy = sampleRect.top + ((y + 0.5) / SAMPLE_GRID_SIZE) * sampleRect.height;
-
-          const localX = vx - containerRect.left + offsetX;
-          const localY = vy - containerRect.top + offsetY;
-
-          const nx = clamp(localX / renderWidth, 0, 1);
-          const ny = clamp(localY / renderHeight, 0, 1);
-
-          const px = clamp(Math.floor(nx * (img.naturalWidth - 1)), 0, img.naturalWidth - 1);
-          const py = clamp(Math.floor(ny * (img.naturalHeight - 1)), 0, img.naturalHeight - 1);
-
-          const pixel = ctx.getImageData(px, py, 1, 1).data;
-          total += luminanceFromRgb(pixel[0], pixel[1], pixel[2]);
-          count += 1;
-        }
-      }
-
-      return count ? total / count : null;
-    } catch (_error) {
-      return null;
-    }
-  }
-
-  function parseBackgroundPosition(style, axis) {
-    const value = axis === 'x' ? style.backgroundPositionX : style.backgroundPositionY;
-    if (value?.includes('%')) return clamp(Number.parseFloat(value) / 100, 0, 1);
-    if (value === 'left' || value === 'top') return 0;
-    if (value === 'right' || value === 'bottom') return 1;
-    return 0.5;
-  }
-
-  async function luminanceFromBodyBackground(sampleRect) {
-    const pseudoStyle = window.getComputedStyle(document.body, '::before');
-    const bodyStyle = window.getComputedStyle(document.body);
-
-    const imageUrl = extractUrl(pseudoStyle.backgroundImage) || extractUrl(bodyStyle.backgroundImage);
-    if (!imageUrl) return null;
-
-    const bgImage = await loadImage(imageUrl);
-    if (!bgImage) return null;
-
-    const posX = parseBackgroundPosition(pseudoStyle, 'x');
-    const posY = parseBackgroundPosition(pseudoStyle, 'y');
-
-    const containerRect = {
-      left: 0,
-      top: 0,
-      width: window.innerWidth,
-      height: window.innerHeight,
-    };
-
-    return computeLuminanceFromCoverImage(bgImage, sampleRect, containerRect, posX, posY);
   }
 
   function fallbackLuminance(wrapper) {
@@ -258,58 +150,35 @@
     }
   }
 
-  function getContrastWrappers() {
-    const wrappers = Array.from(document.querySelectorAll(WRAPPER_SELECTORS)).filter((el) => el instanceof HTMLElement);
-
-    wrappers.forEach((wrapper) => {
-      if (!wrapper.classList.contains('dynamic-contrast')) {
-        wrapper.classList.add('dynamic-contrast');
-      }
-    });
-
-    return wrappers;
-  }
-
   function setWrapperContrast(wrapper, luminance) {
     const contrast = luminance > LUMINANCE_THRESHOLD ? 'dark' : 'light';
     if (wrapper.getAttribute('data-contrast') !== contrast) {
       wrapper.setAttribute('data-contrast', contrast);
     }
+
+    wrapper.querySelectorAll(TEXT_SELECTOR).forEach((node) => {
+      if (node.closest('button, .button, [role="button"], input, select, textarea, .shopify-payment-button, .buy-buttons')) {
+        return;
+      }
+      node.style.color = '';
+    });
   }
 
-  async function applyContrast() {
+  function applyContrast() {
     if (!isProductPage()) return;
 
-    const wrappers = getContrastWrappers();
-
-    for (const wrapper of wrappers) {
+    document.querySelectorAll('.dynamic-contrast').forEach((wrapper) => {
       const wrapperRect = wrapper.getBoundingClientRect();
-      if (wrapperRect.width < 4 || wrapperRect.height < 4) continue;
+      if (wrapperRect.width < 4 || wrapperRect.height < 4) return;
 
       const image = findBackgroundImageEl(wrapper);
-      if (image && !image.complete) {
-        image.addEventListener('load', () => {
-          window.requestAnimationFrame(() => {
-            applyContrast();
-          });
-        }, { once: true });
-        continue;
-      }
-
-      let resolvedLuminance = image ? computeAverageLuminance(image, wrapperRect) : null;
-
-      if (typeof resolvedLuminance !== 'number') {
-        resolvedLuminance = await luminanceFromBodyBackground(wrapperRect);
-      }
-
-      if (typeof resolvedLuminance !== 'number') {
-        resolvedLuminance = fallbackLuminance(wrapper);
-      }
+      const luminance = image ? computeAverageLuminance(image, wrapperRect) : null;
+      const resolvedLuminance = luminance ?? fallbackLuminance(wrapper);
 
       if (typeof resolvedLuminance === 'number') {
         setWrapperContrast(wrapper, resolvedLuminance);
       }
-    }
+    });
   }
 
   function createScheduler(callback, delay = SCROLL_RESIZE_THROTTLE_MS) {
@@ -353,7 +222,6 @@
     const schedule = createScheduler(applyContrast);
 
     schedule();
-    window.addEventListener('load', schedule);
     window.addEventListener('resize', schedule);
     window.addEventListener('scroll', schedule, { passive: true });
     document.addEventListener('DOMContentLoaded', schedule);
@@ -367,7 +235,7 @@
       threshold: [0, 0.2, 0.5, 0.8, 1],
     });
 
-    getContrastWrappers().forEach((wrapper) => intersectionObserver.observe(wrapper));
+    document.querySelectorAll('.dynamic-contrast').forEach((wrapper) => intersectionObserver.observe(wrapper));
 
     bindGalleryObservers(schedule);
   }

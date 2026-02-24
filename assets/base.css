@@ -5012,19 +5012,19 @@ main,
   }
 }
 
-/* Dynamic contrast text treatment (product template only) */
-main[data-template*='product'] .dynamic-contrast[data-contrast='light'] {
-  --dc-text: #fff;
+/* Dynamic contrast text treatment */
+.product-details.dynamic-contrast {
+  isolation: isolate;
 }
 
-main[data-template*='product'] .dynamic-contrast[data-contrast='dark'] {
-  --dc-text: #111;
+.product-details.dynamic-contrast :where(h1, h2, h3, h4, h5, h6, p, a, span, li, dt, dd, legend, label, small, strong, em, blockquote, cite, .rte, .rte *) {
+  color: #fff;
+  mix-blend-mode: difference;
 }
 
-main[data-template*='product'] .dynamic-contrast :is(h1,h2,h3,h4,h5,h6,p,span,li,dt,dd,small,strong,em,blockquote,a,label,legend) {
-  color: var(--dc-text);
-}
-
-main[data-template*='product'] .dynamic-contrast :is(button,.button,[role='button'],input,select,textarea,.shopify-payment-button,.shopify-payment-button *,.buy-buttons,.buy-buttons *) {
-  color: inherit !important;
+/* Keep interactive controls visually unchanged */
+.product-details.dynamic-contrast :where(button, .button, .btn, [role='button'], input, select, textarea, .product-form, .product-form__buttons, .quantity, .variant-picker, .shopify-payment-button),
+.product-details.dynamic-contrast :where(button, .button, .btn, [role='button'], .product-form, .product-form__buttons, .quantity, .variant-picker, .shopify-payment-button) * {
+  color: inherit;
+  mix-blend-mode: normal;
 }
