@@ -135,5 +135,17 @@
     {% if template.name == 'product' or template contains 'product' or request.page_type == 'product' %}
       <script src="{{ 'dynamic-contrast.js' | asset_url }}" defer></script>
     {% endif %}
+
+
+  <!-- Global ripple filter (intentionally heavy) -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;left:-9999px;top:-9999px">
+    <filter id="globalRipple" x="-25%" y="-25%" width="150%" height="150%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.010 0.016" numOctaves="3" seed="2" stitchTiles="stitch" result="noise">
+        <animate attributeName="baseFrequency" dur="9s" values="0.008 0.012;0.014 0.018;0.008 0.012" repeatCount="indefinite"/>
+        <animate attributeName="seed" dur="22s" values="1;2;3;4;1" repeatCount="indefinite"/>
+      </feTurbulence>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
   </body>
 </html>
