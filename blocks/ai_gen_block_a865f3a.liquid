@@ -1,0 +1,132 @@
+{% doc %}
+  @prompt
+    Create custom CSS and JavaScript code that makes a section's background image fixed (background-attachment: fixed) while the content on top endlessly scrolls in a loop over it. The content should continuously scroll creating an infinite scrolling carousel effect over the stationary background image., remove the carousel, remove content box. i only want the background image
+{% enddoc %}
+{% assign ai_gen_id = block.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .ai-infinite-scroll-{{ ai_gen_id }} {
+    position: relative;
+    width: 100%;
+    height: {{ block.settings.section_height }}vh;
+    overflow: hidden;
+    display: block;
+  }
+
+  .ai-infinite-scroll-background-{{ ai_gen_id }} {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-attachment: fixed;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 1;
+  }
+
+  .ai-infinite-scroll-background-placeholder-{{ ai_gen_id }} {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #f4f4f4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .ai-infinite-scroll-background-placeholder-{{ ai_gen_id }} svg {
+    width: 100%;
+    height: 100%;
+    max-width: 500px;
+    max-height: 500px;
+  }
+
+  .ai-infinite-scroll-empty-state-{{ ai_gen_id }} {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 20px;
+    font-size: 14px;
+    color: #666;
+    text-align: center;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  @media screen and (max-width: 749px) {
+    .ai-infinite-scroll-{{ ai_gen_id }} {
+      height: {{ block.settings.section_height_mobile }}vh;
+    }
+  }
+{% endstyle %}
+
+<div
+  class="ai-infinite-scroll-{{ ai_gen_id }}"
+  {{ block.shopify_attributes }}
+>
+  {% if block.settings.background_image %}
+    <div
+      class="ai-infinite-scroll-background-{{ ai_gen_id }}"
+      style="background-image: url('{{ block.settings.background_image | image_url: width: 2000 }}');"
+    ></div>
+  {% else %}
+    <div class="ai-infinite-scroll-background-placeholder-{{ ai_gen_id }}">
+      {{ 'hero-apparel-1' | placeholder_svg_tag }}
+      <div class="ai-infinite-scroll-empty-state-{{ ai_gen_id }}">
+        Next, add a background image
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "Fixed background",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Background"
+    },
+    {
+      "type": "image_picker",
+      "id": "background_image",
+      "label": "Background image"
+    },
+    {
+      "type": "header",
+      "content": "Section"
+    },
+    {
+      "type": "range",
+      "id": "section_height",
+      "label": "Desktop height",
+      "min": 30,
+      "max": 100,
+      "step": 5,
+      "unit": "vh",
+      "default": 60
+    },
+    {
+      "type": "range",
+      "id": "section_height_mobile",
+      "label": "Mobile height",
+      "min": 30,
+      "max": 100,
+      "step": 5,
+      "unit": "vh",
+      "default": 50
+    }
+  ],
+  "presets": [
+    {
+      "name": "Fixed background"
+    }
+  ]
+}
+{% endschema %}
