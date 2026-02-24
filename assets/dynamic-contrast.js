@@ -1,193 +1,256 @@
-(function () {
-  const THRESHOLD = 140; // lower = more likely to classify as dark
+(() => {
+  const LUMINANCE_THRESHOLD = 160;
+  const SAMPLE_GRID_SIZE = 10;
+  const SCROLL_RESIZE_THROTTLE_MS = 120;
 
-  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  const MEDIA_IMAGE_SELECTORS = [
+    '.product-information__media img',
+    '.product-media-gallery img',
+    '.media-gallery img',
+    '.product__media img',
+    '.product img',
+  ];
 
-  function extractUrl(value) {
-    if (!value || value === 'none') return null;
-    const m = value.match(/url\(["']?(.*?)["']?\)/i);
-    return m ? m[1] : null;
+  const TEXT_SELECTOR =
+    'h1,h2,h3,h4,h5,h6,p,span,li,dt,dd,small,strong,em,blockquote,a,label,legend';
+  const WRAPPER_SELECTORS = '.dynamic-contrast, .product__info-wrapper, .product-details';
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function isProductPage() {
+    if (document.body?.classList.contains('template-product')) return true;
+    if (window.location.pathname.includes('/products/')) return true;
+    return document.querySelector('main[data-template*="product"]') !== null;
   }
 
-  function getBgImageUrl(el) {
-    const computed = getComputedStyle(el);
-    const before = getComputedStyle(el, '::before');
-    const after = getComputedStyle(el, '::after');
+  function isElementVisible(el) {
+    if (!(el instanceof HTMLElement) || !el.isConnected) return false;
 
-    const candidates = [
-      computed.backgroundImage,
-      before.backgroundImage,
-      after.backgroundImage,
-      computed.getPropertyValue('--site-bg-image'),
-      getComputedStyle(document.documentElement).getPropertyValue('--site-bg-image'),
-      getComputedStyle(document.body).getPropertyValue('--site-bg-image'),
-    ];
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (Number.parseFloat(style.opacity || '1') <= 0.1) return false;
 
-    for (const candidate of candidates) {
-      const url = extractUrl(candidate && candidate.trim());
-      if (url) return url;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    if (rect.bottom < 0 || rect.right < 0) return false;
+    if (rect.top > window.innerHeight || rect.left > window.innerWidth) return false;
+
+    return true;
+  }
+
+  function scoreImageForWrapper(img, wrapperRect) {
+    const rect = img.getBoundingClientRect();
+    const overlapX = Math.max(0, Math.min(rect.right, wrapperRect.right) - Math.max(rect.left, wrapperRect.left));
+    const overlapY = Math.max(0, Math.min(rect.bottom, wrapperRect.bottom) - Math.max(rect.top, wrapperRect.top));
+    const overlapArea = overlapX * overlapY;
+
+    if (overlapArea > 0) return overlapArea + 100000;
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const wrapperCenterX = wrapperRect.left + wrapperRect.width / 2;
+    const wrapperCenterY = wrapperRect.top + wrapperRect.height / 2;
+    const dx = centerX - wrapperCenterX;
+    const dy = centerY - wrapperCenterY;
+
+    return Math.max(0, 50000 - Math.hypot(dx, dy));
+  }
+
+  function findBackgroundImageEl(wrapper) {
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const root = wrapper.closest('[data-testid="product-information"], .product, .shopify-section, main') || document;
+
+    const candidates = MEDIA_IMAGE_SELECTORS.flatMap((selector) => Array.from(root.querySelectorAll(selector)));
+    const uniqueCandidates = Array.from(new Set(candidates)).filter((img) => img instanceof HTMLImageElement && isElementVisible(img));
+
+    if (!uniqueCandidates.length) return null;
+
+    uniqueCandidates.sort((a, b) => scoreImageForWrapper(b, wrapperRect) - scoreImageForWrapper(a, wrapperRect));
+    return uniqueCandidates[0] || null;
+  }
+
+  function luminanceFromRgb(r, g, b) {
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function parseCssColor(colorValue) {
+    if (!colorValue || colorValue === 'transparent') return null;
+
+    const match = colorValue.match(/rgba?\(([^)]+)\)/i);
+    if (!match) return null;
+
+    const [r, g, b, a = '1'] = match[1].split(',').map((part) => part.trim());
+    const alpha = Number.parseFloat(a);
+    if (!Number.isFinite(alpha) || alpha <= 0.01) return null;
+
+    return {
+      r: clamp(Number.parseFloat(r), 0, 255),
+      g: clamp(Number.parseFloat(g), 0, 255),
+      b: clamp(Number.parseFloat(b), 0, 255),
+    };
+  }
+
+  function fallbackLuminance(wrapper) {
+    const nodes = [
+      wrapper,
+      wrapper.closest('[data-testid="product-information"]'),
+      wrapper.closest('.shopify-section'),
+      document.querySelector('main[data-template*="product"]'),
+      document.body,
+      document.documentElement,
+    ].filter(Boolean);
+
+    for (const node of nodes) {
+      const color = parseCssColor(window.getComputedStyle(node).backgroundColor);
+      if (color) return luminanceFromRgb(color.r, color.g, color.b);
     }
 
     return null;
   }
 
-  function getCoverMapping(bgHost, img) {
-    // Map viewport coords -> image coords for background-size: cover
-    const hostRect =
-      bgHost === document.body || bgHost === document.documentElement
-        ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
-        : bgHost.getBoundingClientRect();
+  function computeAverageLuminance(img, sampleRect) {
+    try {
+      if (!img?.naturalWidth || !img?.naturalHeight) return null;
 
-    const imgW = img.naturalWidth;
-    const imgH = img.naturalHeight;
+      const imgRect = img.getBoundingClientRect();
+      if (!imgRect.width || !imgRect.height) return null;
 
-    const hostW = hostRect.width;
-    const hostH = hostRect.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
 
-    // cover scale
-    const scale = Math.max(hostW / imgW, hostH / imgH);
-    const drawnW = imgW * scale;
-    const drawnH = imgH * scale;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
 
-    // background-position (default 50% 50%)
-    const pos = getComputedStyle(bgHost).backgroundPosition.split(' ');
-    const posX = pos[0] || '50%';
-    const posY = pos[1] || '50%';
+      ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
 
-    function parsePos(p, sizeDiff) {
-      // p can be "50%", "left", "center", "right", or px
-      if (p.endsWith('%')) return (parseFloat(p) / 100) * sizeDiff;
-      if (p === 'left' || p === 'top') return 0;
-      if (p === 'center') return 0.5 * sizeDiff;
-      if (p === 'right' || p === 'bottom') return 1 * sizeDiff;
-      const px = parseFloat(p);
-      return Number.isFinite(px) ? px : 0.5 * sizeDiff;
+      let total = 0;
+      let count = 0;
+
+      for (let y = 0; y < SAMPLE_GRID_SIZE; y += 1) {
+        for (let x = 0; x < SAMPLE_GRID_SIZE; x += 1) {
+          const vx = sampleRect.left + ((x + 0.5) / SAMPLE_GRID_SIZE) * sampleRect.width;
+          const vy = sampleRect.top + ((y + 0.5) / SAMPLE_GRID_SIZE) * sampleRect.height;
+
+          const nx = (vx - imgRect.left) / imgRect.width;
+          const ny = (vy - imgRect.top) / imgRect.height;
+
+          const px = clamp(Math.floor(nx * img.naturalWidth), 0, img.naturalWidth - 1);
+          const py = clamp(Math.floor(ny * img.naturalHeight), 0, img.naturalHeight - 1);
+
+          const pixel = ctx.getImageData(px, py, 1, 1).data;
+          total += luminanceFromRgb(pixel[0], pixel[1], pixel[2]);
+          count += 1;
+        }
+      }
+
+      if (!count) return null;
+      return total / count;
+    } catch (_error) {
+      return null;
     }
-
-    const overflowX = drawnW - hostW;
-    const overflowY = drawnH - hostH;
-
-    const offsetX = -parsePos(posX, overflowX); // negative means the image is shifted left
-    const offsetY = -parsePos(posY, overflowY);
-
-    return { hostRect, scale, offsetX, offsetY, imgW, imgH };
   }
 
-  function sampleLuminanceUnder(wrapper, bgHost, img) {
-    const rect = wrapper.getBoundingClientRect();
-    const map = getCoverMapping(bgHost, img);
 
-    // sample a grid of points inside wrapper
-    const samplesX = 5;
-    const samplesY = 4;
+  function getContrastWrappers() {
+    const wrappers = Array.from(document.querySelectorAll(WRAPPER_SELECTORS)).filter((el) => el instanceof HTMLElement);
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    // we only need a small canvas; we’ll draw the whole image once scaled down
-    const MAX = 600;
-    const scaleDown = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
-    canvas.width = Math.max(1, Math.floor(img.naturalWidth * scaleDown));
-    canvas.height = Math.max(1, Math.floor(img.naturalHeight * scaleDown));
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-    let sum = 0;
-    let count = 0;
-
-    for (let y = 0; y < samplesY; y++) {
-      for (let x = 0; x < samplesX; x++) {
-        const px = rect.left + (x + 0.5) * (rect.width / samplesX);
-        const py = rect.top + (y + 0.5) * (rect.height / samplesY);
-
-        // convert viewport point -> point within bgHost
-        const inHostX = px - map.hostRect.left;
-        const inHostY = py - map.hostRect.top;
-
-        // convert host point -> drawn background image coords
-        const drawnX = inHostX - map.offsetX;
-        const drawnY = inHostY - map.offsetY;
-
-        // convert drawn coords -> natural image coords
-        const imgX = drawnX / map.scale;
-        const imgY = drawnY / map.scale;
-
-        // clamp and scale down to our canvas
-        const sx = clamp(Math.floor(imgX * scaleDown), 0, canvas.width - 1);
-        const sy = clamp(Math.floor(imgY * scaleDown), 0, canvas.height - 1);
-
-        const data = ctx.getImageData(sx, sy, 1, 1).data;
-        const r = data[0], g = data[1], b = data[2];
-
-        // perceived luminance
-        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-
-        sum += lum;
-        count++;
+    wrappers.forEach((wrapper) => {
+      if (!wrapper.classList.contains('dynamic-contrast')) {
+        wrapper.classList.add('dynamic-contrast');
       }
-    }
+    });
 
-    return sum / Math.max(1, count);
+    return wrappers;
   }
 
-  function applyDynamicContrast(wrapper) {
-    const bgCandidates = [
-      wrapper.closest('[data-testid="product-information"]'),
-      wrapper.closest('.shopify-section'),
-      wrapper.closest('.product'),
-      document.body,
-      document.documentElement,
-    ].filter(Boolean);
-
-    let bgHost = bgCandidates[bgCandidates.length - 1];
-    let url = null;
-    for (const candidate of bgCandidates) {
-      const candidateUrl = getBgImageUrl(candidate);
-      if (candidateUrl) {
-        bgHost = candidate;
-        url = candidateUrl;
-        break;
-      }
+  function setWrapperContrast(wrapper, luminance) {
+    const contrast = luminance > LUMINANCE_THRESHOLD ? 'dark' : 'light';
+    if (wrapper.getAttribute('data-contrast') !== contrast) {
+      wrapper.setAttribute('data-contrast', contrast);
     }
+  }
 
-    if (!url) return;
+  function applyContrast() {
+    if (!isProductPage()) return;
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous'; // works for same-origin Shopify assets; harmless otherwise
-    img.onload = () => {
-      try {
-        const lum = sampleLuminanceUnder(wrapper, bgHost, img);
-        const isDark = lum < THRESHOLD;
+    getContrastWrappers().forEach((wrapper) => {
+      const wrapperRect = wrapper.getBoundingClientRect();
+      if (wrapperRect.width < 4 || wrapperRect.height < 4) return;
 
-        wrapper.classList.toggle('is-dark', isDark);
-        wrapper.classList.toggle('is-light', !isDark);
-      } catch (e) {
-        // If canvas sampling fails (rare), do nothing
+      const image = findBackgroundImageEl(wrapper);
+      if (image && !image.complete) {
+        image.addEventListener('load', applyContrast, { once: true });
+        return;
       }
+
+      const luminance = image ? computeAverageLuminance(image, wrapperRect) : null;
+      const resolvedLuminance = luminance ?? fallbackLuminance(wrapper);
+
+      if (typeof resolvedLuminance === 'number') {
+        setWrapperContrast(wrapper, resolvedLuminance);
+      }
+    });
+  }
+
+  function createScheduler(callback, delay = SCROLL_RESIZE_THROTTLE_MS) {
+    let rafId = 0;
+    let timeoutId = 0;
+    let lastRun = 0;
+
+    return () => {
+      if (rafId) return;
+
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        const now = Date.now();
+        const wait = Math.max(0, delay - (now - lastRun));
+
+        window.clearTimeout(timeoutId);
+        timeoutId = window.setTimeout(() => {
+          lastRun = Date.now();
+          callback();
+        }, wait);
+      });
     };
-    img.src = url;
   }
 
-  function debounce(fn, t = 150) {
-    let id;
-    return (...args) => {
-      clearTimeout(id);
-      id = setTimeout(() => fn(...args), t);
-    };
+  function bindGalleryObservers(schedule) {
+    const mediaRoot = document.querySelector('.product-information__media, .product-media-gallery, .media-gallery');
+    if (!mediaRoot) return;
+
+    const observer = new MutationObserver(schedule);
+    observer.observe(mediaRoot, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'src', 'srcset', 'aria-hidden'],
+    });
   }
 
   function init() {
-    document.querySelectorAll('.dynamic-contrast').forEach(applyDynamicContrast);
+    if (!isProductPage()) return;
+
+    const schedule = createScheduler(applyContrast);
+
+    schedule();
+    window.addEventListener('resize', schedule);
+    window.addEventListener('scroll', schedule, { passive: true });
+    document.addEventListener('DOMContentLoaded', schedule);
+    document.addEventListener('shopify:section:load', schedule);
+    document.addEventListener('variant:change', schedule);
+    document.addEventListener('slideshow:slide_changed', schedule);
+    document.addEventListener('media-gallery:change', schedule);
+
+    const intersectionObserver = new IntersectionObserver(schedule, {
+      root: null,
+      threshold: [0, 0.2, 0.5, 0.8, 1],
+    });
+
+    getContrastWrappers().forEach((wrapper) => intersectionObserver.observe(wrapper));
+
+    bindGalleryObservers(schedule);
   }
 
-  const reapply = debounce(init, 150);
-
-  document.addEventListener('DOMContentLoaded', init);
-  window.addEventListener('resize', reapply);
-  window.addEventListener('scroll', reapply, { passive: true });
-
-  // Shopify theme editor / section reloads
-  document.addEventListener('shopify:section:load', reapply);
-
-  // If your media/gallery updates via custom events, you can also reapply after variant change:
-  document.addEventListener('variant:change', reapply);
+  init();
 })();

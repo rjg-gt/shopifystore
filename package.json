@@ -1,0 +1,10 @@
+{
+  "name": "shopifystore",
+  "private": true,
+  "scripts": {
+    "ui:smoke": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}
